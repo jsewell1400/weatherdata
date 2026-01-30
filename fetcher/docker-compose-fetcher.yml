@@ -1,0 +1,52 @@
+# Add this service to your existing /opt/weatherdata/docker-compose.yml
+# This is a snippet showing just the fetcher service configuration
+
+services:
+  # ============================================
+  # Python Weather Fetcher
+  # ============================================
+  fetcher:
+    build:
+      context: ./fetcher
+      dockerfile: Dockerfile
+    container_name: weatherdata-fetcher
+    restart: unless-stopped
+    
+    environment:
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_DATABASE: weatherdata
+      MONGO_USERNAME: ${MONGO_APP_USERNAME}
+      MONGO_PASSWORD: ${MONGO_APP_PASSWORD}
+      # Fetch observations every 10 minutes (6 times per hour)
+      OBSERVATION_INTERVAL_SECONDS: 600
+      # Refresh station list once per day
+      STATION_REFRESH_INTERVAL_SECONDS: 86400
+      # Environment Canada URLs (updated June 2025)
+      EC_BASE_URL: https://dd.weather.gc.ca/today/citypage_weather
+      EC_SITE_LIST_URL: https://collaboration.cmc.ec.gc.ca/cmc/cmos/public_doc/msc-data/citypage-weather/site_list_en.geojson
+      # Request settings
+      REQUEST_TIMEOUT_SECONDS: 30
+      MAX_CONCURRENT_REQUESTS: 20
+      LOG_LEVEL: INFO
+    
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    
+    networks:
+      - weatherdata_net
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Optional: Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M

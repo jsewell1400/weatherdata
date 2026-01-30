@@ -1,0 +1,17 @@
+# Never commit secrets
+.env
+
+# Backup files contain data
+backups/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp

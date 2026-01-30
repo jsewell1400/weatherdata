@@ -1,0 +1,182 @@
+name: weatherdata
+
+services:
+  # ============================================
+  # MongoDB - Primary data store
+  # ============================================
+  mongodb:
+    image: mongo:7
+    container_name: weatherdata-mongodb
+    restart: unless-stopped
+    
+    # Security: don't run as root inside container
+    user: "999:999"
+    
+    environment:
+      # Root credentials (only used for initial setup)
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: weatherdata
+      # Pass app credentials for init script
+      MONGO_APP_USERNAME: ${MONGO_APP_USERNAME}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
+    
+    volumes:
+      # Persistent data storage
+      - /var/lib/mongodb:/data/db
+      
+      # Initialization scripts (run once on first start)
+      - ./mongo-init:/docker-entrypoint-initdb.d:ro
+    
+    networks:
+      - weatherdata_net
+    
+    # Only expose to localhost - not to the world
+    ports:
+      - "127.0.0.1:27017:27017"
+    
+    # Health check for dependent services
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  fetcher:
+    build:
+      context: ./fetcher
+      dockerfile: Dockerfile
+    container_name: weatherdata-fetcher
+    restart: unless-stopped
+
+    volumes:
+      - ./weather_stats.py:/app/weather_stats.py:ro
+    
+    environment:
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_DATABASE: weatherdata
+      MONGO_USERNAME: ${MONGO_APP_USERNAME}
+      MONGO_PASSWORD: ${MONGO_APP_PASSWORD}
+      # Fetch observations every 10 minutes (6 times per hour)
+      OBSERVATION_INTERVAL_SECONDS: 600
+      # Refresh station list once per day
+      STATION_REFRESH_INTERVAL_SECONDS: 86400
+      # Request settings
+      REQUEST_TIMEOUT_SECONDS: 30
+      MAX_CONCURRENT_REQUESTS: 20
+      LOG_LEVEL: INFO
+    
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    
+    networks:
+      - weatherdata_net
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Optional: Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+
+
+
+
+  # ============================================
+  # Python Weather Fetcher (uncomment when ready)
+  # ============================================
+  # fetcher:
+  #   build:
+  #     context: ./fetcher
+  #     dockerfile: Dockerfile
+  #   container_name: weatherdata-fetcher
+  #   restart: unless-stopped
+  #   
+  #   environment:
+  #     MONGO_HOST: mongodb
+  #     MONGO_PORT: 27017
+  #     MONGO_DATABASE: weatherdata
+  #     MONGO_USERNAME: ${MONGO_APP_USERNAME}
+  #     MONGO_PASSWORD: ${MONGO_APP_PASSWORD}
+  #     POLL_INTERVAL_SECONDS: 600
+  #   
+  #   depends_on:
+  #     mongodb:
+  #       condition: service_healthy
+  #   
+  #   networks:
+  #     - weatherdata_net
+  #   
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+
+  # ============================================
+  # Prometheus (uncomment when ready)
+  # ============================================
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: weatherdata-prometheus
+  #   restart: unless-stopped
+  #   
+  #   volumes:
+  #     - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #     - prometheus_data:/prometheus
+  #   
+  #   command:
+  #     - '--config.file=/etc/prometheus/prometheus.yml'
+  #     - '--storage.tsdb.path=/prometheus'
+  #     - '--storage.tsdb.retention.time=90d'
+  #     - '--web.enable-lifecycle'
+  #   
+  #   ports:
+  #     - "127.0.0.1:9090:9090"
+  #   
+  #   networks:
+  #     - weatherdata_net
+  #   
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+
+networks:
+  weatherdata_net:
+    driver: bridge
+    # Internal network - containers can reach each other by service name
+
+# Uncomment when Prometheus is enabled
+# volumes:
+#   prometheus_data:
+
+
+

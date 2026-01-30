@@ -1,0 +1,22 @@
+# MongoDB driver
+pymongo>=4.6.0
+
+# HTTP requests
+requests>=2.31.0
+
+# XML parsing
+lxml>=5.0.0
+
+# Date handling
+python-dateutil>=2.8.0
+
+# Configuration and data validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Structured logging
+structlog>=24.1.0
+
+# Async support for concurrent fetching
+aiohttp>=3.9.0
+asyncio-throttle>=1.0.0
