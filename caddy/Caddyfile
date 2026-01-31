@@ -1,0 +1,8 @@
+:443 {
+    tls /certs/cert.pem /certs/key.pem
+    reverse_proxy weather-api:8080
+}
+
+:80 {
+    redir https://{host}{uri} permanent
+}

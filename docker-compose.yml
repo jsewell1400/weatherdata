@@ -105,39 +105,104 @@ services:
           memory: 128M
 
 
-
-
-
   # ============================================
-  # Python Weather Fetcher (uncomment when ready)
+  # Weather API - JSON data publisher
   # ============================================
-  # fetcher:
-  #   build:
-  #     context: ./fetcher
-  #     dockerfile: Dockerfile
-  #   container_name: weatherdata-fetcher
-  #   restart: unless-stopped
-  #   
-  #   environment:
-  #     MONGO_HOST: mongodb
-  #     MONGO_PORT: 27017
-  #     MONGO_DATABASE: weatherdata
-  #     MONGO_USERNAME: ${MONGO_APP_USERNAME}
-  #     MONGO_PASSWORD: ${MONGO_APP_PASSWORD}
-  #     POLL_INTERVAL_SECONDS: 600
-  #   
-  #   depends_on:
-  #     mongodb:
-  #       condition: service_healthy
-  #   
-  #   networks:
-  #     - weatherdata_net
-  #   
-  #   logging:
-  #     driver: "json-file"
-  #     options:
-  #       max-size: "10m"
-  #       max-file: "3"
+  weather-api:
+    build:
+      context: ./weather-api
+      dockerfile: Dockerfile
+    container_name: weatherdata-api
+    restart: unless-stopped
+    
+    environment:
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_DATABASE: weatherdata
+      MONGO_USERNAME: ${MONGO_APP_USERNAME}
+      MONGO_PASSWORD: ${MONGO_APP_PASSWORD}
+      API_PORT: 8080
+      LOG_LEVEL: INFO
+      # Enable API docs at /docs (disable in production if desired)
+      ENABLE_DOCS: "false"
+      # Restrict CORS origins (comma-separated, or leave empty for "*")
+      # CORS_ORIGINS: "https://yoursite.com,https://app.yoursite.com"
+    
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    
+    networks:
+      - weatherdata_net
+    
+    # Expose to internet (adjust as needed)
+    # Option 1: Direct exposure (use with reverse proxy like nginx/caddy)
+    #commented to allow caddy
+    #ports:
+    #  - "127.0.0.1:8080:8080"
+    
+    # Option 2: Expose directly to internet (not recommended without TLS)
+    # ports:
+    #   - "8080:8080"
+    
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Security: no new privileges
+    security_opt:
+      - no-new-privileges:true
+    
+    # Read-only filesystem (api doesn't need to write)
+    read_only: true
+    tmpfs:
+      - /tmp
+
+###########
+#Caddy Reverse http proxy
+###########
+  caddy:
+    image: caddy:2-alpine
+    container_name: weatherdata-caddy
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/certs:/certs:ro 
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./caddy/logs:/var/log/caddy
+    networks:
+      - weatherdata_net
+    depends_on:
+      - weather-api
+    security_opt:
+      - no-new-privileges:true
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   # ============================================
   # Prometheus (uncomment when ready)
@@ -173,6 +238,12 @@ networks:
   weatherdata_net:
     driver: bridge
     # Internal network - containers can reach each other by service name
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+
 
 # Uncomment when Prometheus is enabled
 # volumes:
