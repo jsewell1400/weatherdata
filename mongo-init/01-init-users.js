@@ -17,12 +17,13 @@ db.createUser({
     ]
 });
 
-// Create initial collections with schema validation (optional but recommended)
+// Create stations collection with schema validation
+// Note: Most fields allow null because Environment Canada data is inconsistent
 db.createCollection('stations', {
     validator: {
         $jsonSchema: {
             bsonType: 'object',
-            required: ['station_code', 'name_en', 'name_fr', 'province', 'coordinates'],
+            required: ['station_code', 'name_en', 'province', 'coordinates'],
             properties: {
                 station_code: {
                     bsonType: 'string',
@@ -33,7 +34,7 @@ db.createCollection('stations', {
                     description: 'Station name in English'
                 },
                 name_fr: {
-                    bsonType: 'string',
+                    bsonType: ['string', 'null'],
                     description: 'Station name in French'
                 },
                 province: {
@@ -46,8 +47,16 @@ db.createCollection('stations', {
                     properties: {
                         lat: { bsonType: 'double' },
                         lon: { bsonType: 'double' },
-                        elevation_m: { bsonType: 'double' }
+                        elevation_m: { bsonType: ['double', 'null'] }
                     }
+                },
+                region_en: {
+                    bsonType: ['string', 'null'],
+                    description: 'Region name in English'
+                },
+                region_fr: {
+                    bsonType: ['string', 'null'],
+                    description: 'Region name in French'
                 },
                 active: {
                     bsonType: 'bool',
@@ -58,9 +67,11 @@ db.createCollection('stations', {
                 }
             }
         }
-    }
+    },
+    validationLevel: 'moderate'
 });
 
+// Create observations collection with schema validation
 db.createCollection('observations', {
     validator: {
         $jsonSchema: {
@@ -81,20 +92,94 @@ db.createCollection('observations', {
                 },
                 temperature_c: { bsonType: ['double', 'null'] },
                 humidity_pct: { bsonType: ['double', 'null'] },
+                dewpoint_c: { bsonType: ['double', 'null'] },
                 pressure_kpa: { bsonType: ['double', 'null'] },
+                pressure_tendency: { bsonType: ['string', 'null'] },
                 wind_speed_kmh: { bsonType: ['double', 'null'] },
-                wind_direction_deg: { bsonType: ['int', 'null'] },
+                wind_direction_deg: { bsonType: ['int', 'double', 'null'] },
+                wind_direction_text: { bsonType: ['string', 'null'] },
                 wind_gust_kmh: { bsonType: ['double', 'null'] },
+                wind_chill: { bsonType: ['double', 'int', 'null'] },
+                humidex: { bsonType: ['double', 'null'] },
                 visibility_km: { bsonType: ['double', 'null'] },
                 condition_en: { bsonType: ['string', 'null'] },
                 condition_fr: { bsonType: ['string', 'null'] },
                 icon_code: { bsonType: ['string', 'null'] }
             }
         }
-    }
+    },
+    validationLevel: 'moderate'
 });
+
+// Create warnings collection with schema validation
+db.createCollection('warnings', {
+    validator: {
+        $jsonSchema: {
+            bsonType: 'object',
+            required: ['station_code', 'event_type', 'priority', 'headline'],
+            properties: {
+                station_code: {
+                    bsonType: 'string',
+                    description: 'Reference to stations collection'
+                },
+                event_type: {
+                    bsonType: 'string',
+                    description: 'Type: warning, watch, advisory, statement, ended'
+                },
+                priority: {
+                    bsonType: 'string',
+                    description: 'Priority: urgent, high, medium, low'
+                },
+                headline: {
+                    bsonType: 'string',
+                    description: 'Warning headline text'
+                },
+                description: {
+                    bsonType: ['string', 'null'],
+                    description: 'Full warning description'
+                },
+                effective: {
+                    bsonType: ['date', 'null'],
+                    description: 'When warning takes effect'
+                },
+                expires: {
+                    bsonType: ['date', 'null'],
+                    description: 'When warning expires'
+                },
+                url: {
+                    bsonType: ['string', 'null'],
+                    description: 'URL for more information'
+                },
+                fetched_at: {
+                    bsonType: 'date',
+                    description: 'When we retrieved this data'
+                },
+                active: {
+                    bsonType: 'bool',
+                    description: 'Whether warning is currently active'
+                }
+            }
+        }
+    },
+    validationLevel: 'moderate'
+});
+
+// Create indexes for stations collection
+db.stations.createIndex({ "station_code": 1 }, { unique: true, name: "idx_station_code" });
+db.stations.createIndex({ "province": 1 }, { name: "idx_province" });
+
+// Create indexes for observations collection
+db.observations.createIndex({ "station_code": 1, "observed_at": -1 }, { name: "idx_station_time" });
+db.observations.createIndex({ "observed_at": -1 }, { name: "idx_time" });
+db.observations.createIndex({ "station_code": 1, "fetched_at": -1 }, { name: "idx_station_fetched" });
+
+// Create indexes for warnings collection
+db.warnings.createIndex({ "station_code": 1, "headline": 1, "effective": 1 }, { name: "idx_warning_unique" });
+db.warnings.createIndex({ "active": 1, "expires": 1 }, { name: "idx_active_expires" });
+db.warnings.createIndex({ "station_code": 1, "active": 1 }, { name: "idx_station_active" });
 
 print('=== MongoDB initialization complete ===');
 print('Created user: ' + (process.env.MONGO_APP_USERNAME || 'weatherapp'));
-print('Created collections: stations, observations');
+print('Created collections: stations, observations, warnings');
+print('Created indexes for all collections');
 
