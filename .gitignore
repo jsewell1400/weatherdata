@@ -4,6 +4,8 @@
 # Backup files contain data
 backups/
 *.log
+*.bak
+*bak
 
 # Python
 __pycache__/
@@ -15,3 +17,7 @@ venv/
 .idea/
 .vscode/
 *.swp
+
+#housekeeping
+.gitignore
+
