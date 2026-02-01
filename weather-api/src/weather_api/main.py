@@ -107,7 +107,18 @@ async def health_check():
         )
 
 
-def format_station_response(station: dict, observation: dict, warnings: list) -> dict:
+def get_first_sentence(text: str) -> str:
+    """Extract the first sentence from text (up to and including first period)."""
+    if not text:
+        return ""
+    # Find the first period
+    period_idx = text.find(".")
+    if period_idx != -1:
+        return text[:period_idx + 1]
+    return text
+
+
+def format_station_response(station: dict, observation: dict, warnings: list, forecast_doc: dict) -> dict:
     """Format station data into the expected JSON structure."""
     city_name = station.get("name_en", "Unknown")
     
@@ -139,8 +150,14 @@ def format_station_response(station: dict, observation: dict, warnings: list) ->
                 warning_texts.append(headline)
     warnings_str = "; ".join(warning_texts)
     
-    # Get forecast (if available in observation or separate collection)
-    forecast = observation.get("forecast", "")
+    # Get forecast: first period's text_summary, first sentence only
+    forecast = ""
+    if forecast_doc:
+        periods = forecast_doc.get("periods", [])
+        if periods:
+            first_period = periods[0]
+            full_text = first_period.get("text_summary", "")
+            forecast = get_first_sentence(full_text)
     
     return {
         "title": f"{city_name} - Weather - Environment Canada",
@@ -240,6 +257,17 @@ async def get_weather(
     ]
     observations = {doc["_id"]: doc["latest"] for doc in db.observations.aggregate(pipeline)}
     
+    # Fetch latest forecasts for all stations
+    forecast_pipeline = [
+        {"$match": {"station_code": {"$in": station_codes}}},
+        {"$sort": {"issued_at": -1}},
+        {"$group": {
+            "_id": "$station_code",
+            "latest": {"$first": "$$ROOT"}
+        }}
+    ]
+    forecasts = {doc["_id"]: doc["latest"] for doc in db.forecasts.aggregate(forecast_pipeline)}
+    
     # Fetch active warnings for all stations
     warnings_cursor = db.warnings.find({
         "station_code": {"$in": station_codes},
@@ -258,8 +286,9 @@ async def get_weather(
         city_name = station.get("name_en", code)
         observation = observations.get(code, {})
         station_warnings = warnings_by_station.get(code, [])
+        station_forecast = forecasts.get(code, {})
         
-        result[city_name] = format_station_response(station, observation, station_warnings)
+        result[city_name] = format_station_response(station, observation, station_warnings, station_forecast)
     
     return result
 
