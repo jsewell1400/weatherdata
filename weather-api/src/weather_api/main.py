@@ -128,12 +128,14 @@ def format_station_response(station: dict, observation: dict, warnings: list) ->
     else:
         updated_str = ""
     
-    # Combine warnings into a single string
+    # Combine warnings into a single string (deduplicated)
+    seen_headlines = set()
     warning_texts = []
     for w in warnings:
         if w.get("active", False):
             headline = w.get("headline", "")
-            if headline:
+            if headline and headline not in seen_headlines:
+                seen_headlines.add(headline)
                 warning_texts.append(headline)
     warnings_str = "; ".join(warning_texts)
     

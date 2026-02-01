@@ -10,7 +10,7 @@ from pymongo.errors import PyMongoError
 from pymongo.database import Database
 
 from .config import settings
-from .models import Station, Observation, Warning
+from .models import Station, Observation, Warning, Forecast
 
 logger = structlog.get_logger(__name__)
 
@@ -90,6 +90,12 @@ class WeatherDatabase:
         self.db.warnings.create_index(
             [("station_code", 1), ("active", 1)],
             name="idx_station_active"
+        )
+
+	# Forecasts collection indexes
+        self.db.forecasts.create_index(
+            [("station_code", 1), ("issued_at", -1)],
+            name="idx_forecast_station_issued"
         )
         
         logger.info("Database indexes ensured")
@@ -228,6 +234,41 @@ class WeatherDatabase:
         except PyMongoError as e:
             logger.error("Failed to upsert warnings", error=str(e))
             raise
+
+
+    def upsert_forecast(self, forecast: Forecast) -> bool:
+        """
+        Upsert a forecast - update if same station+issued_at exists, else insert.
+        Returns True if inserted/updated successfully.
+        """
+        if not forecast:
+            return False
+
+        try:
+            doc = forecast.to_mongo_doc()
+            result = self.db.forecasts.update_one(
+                {
+                    "station_code": forecast.station_code,
+                    "issued_at": forecast.issued_at
+                },
+                {"$set": doc},
+                upsert=True
+            )
+            return True
+        except PyMongoError as e:
+            logger.error("Failed to upsert forecast", station_code=forecast.station_code, error=str(e))
+            return False
+
+    def get_latest_forecast(self, station_code: str) -> Optional[dict]:
+        """Get the most recent forecast for a station."""
+        return self.db.forecasts.find_one(
+            {"station_code": station_code},
+            sort=[("issued_at", -1)]
+        )
+
+
+
+
 
     def clear_station_warnings(self, station_code: str) -> int:
         """

@@ -164,6 +164,38 @@ db.createCollection('warnings', {
     validationLevel: 'moderate'
 });
 
+db.createCollection('forecasts', {
+    validator: {
+        $jsonSchema: {
+            bsonType: 'object',
+            required: ['station_code', 'issued_at', 'fetched_at', 'periods'],
+            properties: {
+                station_code: { bsonType: 'string' },
+                issued_at: { bsonType: 'date' },
+                fetched_at: { bsonType: 'date' },
+                periods: {
+                    bsonType: 'array',
+                    items: {
+                        bsonType: 'object',
+                        required: ['period_name', 'text_summary'],
+                        properties: {
+                            period_name: { bsonType: 'string' },           // "Tonight", "Saturday"
+                            text_summary: { bsonType: 'string' },          // "Clearing. Low minus 21."
+                            abbreviated_summary: { bsonType: ['string', 'null'] }, // "Clear"
+                            icon_code: { bsonType: ['string', 'null'] },
+                            temperature_c: { bsonType: ['double', 'null'] },
+                            temperature_class: { bsonType: ['string', 'null'] }, // "high" or "low"
+                            pop_pct: { bsonType: ['int', 'null'] },        // probability of precipitation
+                            wind_summary: { bsonType: ['string', 'null'] },
+                            humidity_pct: { bsonType: ['double', 'null'] }
+                        }
+                    }
+                }
+            }
+        }
+    }
+});
+
 // Create indexes for stations collection
 db.stations.createIndex({ "station_code": 1 }, { unique: true, name: "idx_station_code" });
 db.stations.createIndex({ "province": 1 }, { name: "idx_province" });
@@ -177,6 +209,12 @@ db.observations.createIndex({ "station_code": 1, "fetched_at": -1 }, { name: "id
 db.warnings.createIndex({ "station_code": 1, "headline": 1, "effective": 1 }, { name: "idx_warning_unique" });
 db.warnings.createIndex({ "active": 1, "expires": 1 }, { name: "idx_active_expires" });
 db.warnings.createIndex({ "station_code": 1, "active": 1 }, { name: "idx_station_active" });
+
+// Index for latest forecast per station
+db.forecasts.createIndex(
+    { "station_code": 1, "issued_at": -1 },
+    { name: "idx_station_issued" }
+);
 
 print('=== MongoDB initialization complete ===');
 print('Created user: ' + (process.env.MONGO_APP_USERNAME || 'weatherapp'));

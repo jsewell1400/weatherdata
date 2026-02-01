@@ -10,7 +10,8 @@ import structlog
 from lxml import etree
 from dateutil import parser as dateparser
 
-from .models import Station, Observation, Coordinates, StationListEntry, Warning
+from .models import Station, Observation, Coordinates, StationListEntry, Warning, Forecast, ForecastPeriod
+
 
 logger = structlog.get_logger(__name__)
 
@@ -100,11 +101,11 @@ def parse_site_list_xml(xml_content: bytes) -> List[StationListEntry]:
         raise
 
 
-def parse_station_data(xml_content: bytes, station_code: str, province: str) -> Tuple[Optional[Station], Optional[Observation], List[Warning]]:
+def parse_station_data(xml_content: bytes, station_code: str, province: str) -> Tuple[Optional[Station], Optional[Observation], List[Warning], Optional["Forecast"]]:
     """
-    Parse a station's XML data to extract station metadata, current observation, and warnings.
+    Parse a station's XML data to extract station metadata, current observation, warnings, and forecast.
     
-    Returns tuple of (Station, Observation, List[Warning]) or (None, None, []) on parse failure.
+    Returns tuple of (Station, Observation, List[Warning], Forecast) or (None, None, [], None) on parse failure.
     """
     try:
         root = etree.fromstring(xml_content)
@@ -118,14 +119,17 @@ def parse_station_data(xml_content: bytes, station_code: str, province: str) -> 
         # Parse warnings
         warnings = _parse_warnings(root, station_code)
         
-        return station, observation, warnings
+        # Parse forecasts
+        forecast = _parse_forecasts(root, station_code)
+        
+        return station, observation, warnings, forecast
         
     except etree.XMLSyntaxError as e:
         logger.warning("Failed to parse station XML", station_code=station_code, error=str(e))
-        return None, None, []
+        return None, None, [], None
     except Exception as e:
         logger.warning("Error parsing station data", station_code=station_code, error=str(e))
-        return None, None, []
+        return None, None, [], None
 
 
 def _parse_coordinate_string(coord_str: Optional[str]) -> Optional[float]:
@@ -352,6 +356,84 @@ def _parse_warnings(root: etree._Element, station_code: str) -> List[Warning]:
         logger.warning("Error parsing warnings", station_code=station_code, error=str(e))
     
     return warnings
+
+
+def _parse_forecasts(root: etree._Element, station_code: str) -> Optional[Forecast]:
+    """Extract weather forecasts from XML."""
+    try:
+        forecast_group = root.find('.//forecastGroup')
+        if forecast_group is None:
+            return None
+        
+        # Get forecast issue time (UTC)
+        date_time = forecast_group.find('dateTime[@zone="UTC"]')
+        issued_at = _parse_datetime(date_time)
+        if issued_at is None:
+            issued_at = utcnow()
+        
+        periods = []
+        for forecast_elem in forecast_group.findall('forecast'):
+            # Get period name (e.g., "Tonight", "Saturday")
+            period_elem = forecast_elem.find('period')
+            period_name = ""
+            if period_elem is not None:
+                period_name = period_elem.get('textForecastName', '') or period_elem.text or ''
+            
+            # Get the main text summary - the short one-liner you want
+            text_summary = _get_text(forecast_elem, 'textSummary') or ''
+            
+            # Get abbreviated summary and icon from abbreviatedForecast
+            abbreviated_summary = _get_text(forecast_elem, 'abbreviatedForecast/textSummary')
+            icon_code = _get_text(forecast_elem, 'abbreviatedForecast/iconCode')
+            
+            # Get probability of precipitation
+            pop_text = _get_text(forecast_elem, 'abbreviatedForecast/pop')
+            pop_pct = None
+            if pop_text:
+                try:
+                    pop_pct = int(pop_text)
+                except (ValueError, TypeError):
+                    pass
+            
+            # Get temperature
+            temp_elem = forecast_elem.find('temperatures/temperature')
+            temperature_c = None
+            temperature_class = None
+            if temp_elem is not None:
+                temperature_c = _parse_float(temp_elem.text)
+                temperature_class = temp_elem.get('class')  # "high" or "low"
+            
+            # Get wind summary
+            wind_summary = _get_text(forecast_elem, 'winds/textSummary')
+            
+            # Get humidity
+            humidity_pct = _get_float(forecast_elem, 'relativeHumidity')
+            
+            periods.append(ForecastPeriod(
+                period_name=period_name,
+                text_summary=text_summary,
+                abbreviated_summary=abbreviated_summary,
+                icon_code=icon_code,
+                temperature_c=temperature_c,
+                temperature_class=temperature_class,
+                pop_pct=pop_pct,
+                wind_summary=wind_summary,
+                humidity_pct=humidity_pct,
+            ))
+        
+        if not periods:
+            return None
+        
+        return Forecast(
+            station_code=station_code,
+            issued_at=issued_at,
+            fetched_at=utcnow(),
+            periods=periods
+        )
+        
+    except Exception as e:
+        logger.warning("Error parsing forecasts", station_code=station_code, error=str(e))
+        return None
 
 
 def _get_text(element: etree._Element, path: str) -> Optional[str]:

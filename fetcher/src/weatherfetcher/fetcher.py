@@ -16,6 +16,7 @@ from .db import db
 from .models import Station, Observation, StationListEntry, Coordinates, Warning
 from .parser import parse_site_list, parse_station_data
 
+
 logger = structlog.get_logger(__name__)
 
 
@@ -177,7 +178,8 @@ class WeatherFetcher:
             if xml_content is None:
                 return None
             
-            station, _, _ = parse_station_data(xml_content, entry.station_code, entry.province)
+            station, _, _, _ = parse_station_data(xml_content, entry.station_code, entry.province) 
+            
             return station
             
         except Exception as e:
@@ -246,7 +248,7 @@ class WeatherFetcher:
                         result = await self._fetch_station_from_url(file_url, station_code, province)
                     
                     if result:
-                        station_obj, observation, warnings = result
+                        station_obj, observation, warnings, forecast = result
                         if station_obj:
                             stations_to_update.append(station_obj)
                         if observation:
@@ -255,8 +257,9 @@ class WeatherFetcher:
                             all_warnings.extend(warnings)
                             stations_with_warnings.add(station_code)
                         elif station_code not in stations_with_warnings:
-                            # Station had no warnings - clear any existing active warnings
                             db.clear_station_warnings(station_code)
+                        if forecast:
+                            db.upsert_forecast(forecast)
                 except Exception as e:
                     errors += 1
         
@@ -370,8 +373,8 @@ class WeatherFetcher:
             if xml_content is None:
                 return None
             
-            station, observation, warnings = parse_station_data(xml_content, station_code, province)
-            return (station, observation, warnings)
+            station, observation, warnings, forecast = parse_station_data(xml_content, station_code, province)
+            return (station, observation, warnings, forecast)
             
         except Exception as e:
             return None

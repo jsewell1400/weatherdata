@@ -128,7 +128,21 @@ def cmd_stats(db, args):
             print(f"\n   By Province:")
             for w in warnings_by_prov:
                 print(f"      {w['_id']}: {w['count']}")
+    # Forecasts stats
+    total_forecasts = db.forecasts.count_documents({})
+    print(f"\n🔮 FORECASTS")
+    print(f"   Total: {total_forecasts:,}")
     
+    if total_forecasts > 0:
+        # Count unique stations with forecasts
+        stations_with_forecasts = len(db.forecasts.distinct("station_code"))
+        print(f"   Stations with forecasts: {stations_with_forecasts:,}")
+        
+        # Most recent forecast
+        newest_forecast = db.forecasts.find_one(sort=[("issued_at", -1)])
+        if newest_forecast:
+            print(f"   Latest issued: {newest_forecast['issued_at']}")
+
     stats = db.command("dbstats")
     size_mb = stats.get("dataSize", 0) / (1024 * 1024)
     storage_mb = stats.get("storageSize", 0) / (1024 * 1024)

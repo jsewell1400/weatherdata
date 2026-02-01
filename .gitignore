@@ -1,5 +1,7 @@
 # Never commit secrets
 .env
+.pem
+
 
 # Backup files contain data
 backups/

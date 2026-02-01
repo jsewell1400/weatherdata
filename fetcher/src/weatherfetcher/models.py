@@ -5,6 +5,7 @@ Data models for weather stations, observations, and warnings.
 from datetime import datetime, timezone
 from typing import Optional, List
 from pydantic import BaseModel, Field
+from typing import Optional, List
 
 
 def utcnow():
@@ -130,6 +131,50 @@ class Warning(BaseModel):
             "fetched_at": self.fetched_at,
             "active": self.active,
         }
+
+
+class ForecastPeriod(BaseModel):
+    """Single forecast period (e.g., 'Tonight', 'Saturday')."""
+    period_name: str = Field(..., description="Period name like 'Tonight' or 'Saturday'")
+    text_summary: str = Field(..., description="Short forecast text like 'Clearing. Low minus 21.'")
+    abbreviated_summary: Optional[str] = Field(None, description="Even shorter summary like 'Clear'")
+    icon_code: Optional[str] = Field(None, description="Weather icon code")
+    temperature_c: Optional[float] = Field(None, description="Forecast temperature")
+    temperature_class: Optional[str] = Field(None, description="'high' or 'low'")
+    pop_pct: Optional[int] = Field(None, description="Probability of precipitation")
+    wind_summary: Optional[str] = Field(None, description="Wind forecast text")
+    humidity_pct: Optional[float] = Field(None, description="Relative humidity percentage")
+
+
+class Forecast(BaseModel):
+    """Weather forecast for a station."""
+    station_code: str = Field(..., description="Reference to stations collection")
+    issued_at: datetime = Field(..., description="When the forecast was issued")
+    fetched_at: datetime = Field(default_factory=utcnow, description="When we retrieved this data")
+    periods: List[ForecastPeriod] = Field(default_factory=list, description="Forecast periods")
+
+    def to_mongo_doc(self) -> dict:
+        """Convert to MongoDB document format."""
+        return {
+            "station_code": self.station_code,
+            "issued_at": self.issued_at,
+            "fetched_at": self.fetched_at,
+            "periods": [
+                {
+                    "period_name": p.period_name,
+                    "text_summary": p.text_summary,
+                    "abbreviated_summary": p.abbreviated_summary,
+                    "icon_code": p.icon_code,
+                    "temperature_c": p.temperature_c,
+                    "temperature_class": p.temperature_class,
+                    "pop_pct": p.pop_pct,
+                    "wind_summary": p.wind_summary,
+                    "humidity_pct": p.humidity_pct,
+                }
+                for p in self.periods
+            ],
+        }
+
 
 
 class StationListEntry(BaseModel):
